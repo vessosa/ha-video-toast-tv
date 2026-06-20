@@ -1,0 +1,42 @@
+# Gradle / Android build
+.gradle/
+build/
+app/build/
+captures/
+*.apk
+*.ap_
+*.aab
+*.aar
+
+# Local Android SDK / machine config
+local.properties
+
+# Signing material and release secrets
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+keystore.properties
+signing.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Kotlin / Java
+*.class
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# App/private config exports
+*.env
+.env
+.env.*
+!/.env.example

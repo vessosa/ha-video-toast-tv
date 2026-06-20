@@ -1,0 +1,20 @@
+package com.vessosa.havideotoasttv
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import androidx.core.content.ContextCompat
+
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED ||
+            intent.action == Intent.ACTION_LOCKED_BOOT_COMPLETED) {
+            if (ConfigStore.load(context).isConfigured) {
+                ContextCompat.startForegroundService(
+                    context,
+                    Intent(context, HAListenerService::class.java)
+                )
+            }
+        }
+    }
+}

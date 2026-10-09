@@ -95,7 +95,7 @@ class SetupServer(private val context: Context, private val onSaved: () -> Unit)
             <input name="token" value="${cfg.token}" placeholder="Paste token">
             <button type="submit">Save</button>
             </form>
-            <p>Automation event type: <code>ha_video_toast</code></p>
+            <p>Automation event type: <code>ha_tv_toast</code></p>
             </body></html>
         """.trimIndent()
     }

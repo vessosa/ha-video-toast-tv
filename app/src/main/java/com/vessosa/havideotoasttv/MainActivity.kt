@@ -27,6 +27,7 @@ class MainActivity : android.app.Activity() {
     private lateinit var findButton: Button
     private lateinit var overlayButton: Button
     private lateinit var testButton: Button
+    private lateinit var notificationButton: Button
     private lateinit var fullscreenButton: Button
     private var setupServer: SetupServer? = null
     private var initialFocusApplied = false
@@ -38,6 +39,9 @@ class MainActivity : android.app.Activity() {
         setupServer = SetupServer(this) { runOnUiThread { loadConfig(); startServiceNow() } }
         startSetupServer()
         handleDeepLink(intent)
+        if (ConfigStore.load(this).isConfigured) {
+            startServiceNow()
+        }
         if (Build.VERSION.SDK_INT >= 33) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 12)
         }
@@ -102,8 +106,10 @@ class MainActivity : android.app.Activity() {
 
         val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         testButton = button("Test Toast") { testToast(false) }
+        notificationButton = button("Test Notice") { testNotification() }
         fullscreenButton = button("Fullscreen Test") { testToast(true) }
         row2.addView(testButton)
+        row2.addView(notificationButton)
         row2.addView(fullscreenButton)
         left.addView(row2)
 
@@ -180,13 +186,17 @@ class MainActivity : android.app.Activity() {
 
         overlayButton.nextFocusLeftId = findButton.id
         overlayButton.nextFocusUpId = tokenInput.id
-        overlayButton.nextFocusDownId = fullscreenButton.id
+        overlayButton.nextFocusDownId = notificationButton.id
 
         testButton.nextFocusUpId = saveButton.id
-        testButton.nextFocusRightId = fullscreenButton.id
+        testButton.nextFocusRightId = notificationButton.id
 
-        fullscreenButton.nextFocusUpId = findButton.id
-        fullscreenButton.nextFocusLeftId = testButton.id
+        notificationButton.nextFocusUpId = findButton.id
+        notificationButton.nextFocusLeftId = testButton.id
+        notificationButton.nextFocusRightId = fullscreenButton.id
+
+        fullscreenButton.nextFocusUpId = overlayButton.id
+        fullscreenButton.nextFocusLeftId = notificationButton.id
     }
 
     private fun tvButtonBackground(): StateListDrawable =
@@ -271,6 +281,19 @@ class MainActivity : android.app.Activity() {
             return
         }
         OverlayToastManager(this).show(cam, if (fullscreen) 8 else 12, fullscreen)
+    }
+
+    private fun testNotification() {
+        if (!Settings.canDrawOverlays(this)) {
+            openOverlaySettings()
+            return
+        }
+        OverlayToastManager(this).show(ToastRequest.Message(
+            title = "Dog detected",
+            message = "Backyard camera",
+            duration = 8,
+            level = ToastRequest.Message.Level.INFO
+        ))
     }
 
     private fun handleDeepLink(intent: Intent?) {

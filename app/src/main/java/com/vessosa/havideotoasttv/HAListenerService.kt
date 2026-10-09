@@ -19,11 +19,14 @@ import org.json.JSONObject
 class HAListenerService : Service() {
     companion object {
         const val ACTION_RELOAD = "com.vessosa.havideotoasttv.RELOAD"
+        private const val EVENT_TV_TOAST = "ha_tv_toast"
+        private const val EVENT_VIDEO_TOAST = "ha_video_toast"
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private var ws: WebSocket? = null
     private var msgId = 0
+    private var connectionGeneration = 0
     private var stopped = false
     private lateinit var overlay: OverlayToastManager
 
@@ -31,7 +34,6 @@ class HAListenerService : Service() {
         super.onCreate()
         overlay = OverlayToastManager(this)
         startForeground(1, notification("Connecting to Home Assistant"))
-        connect()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -62,19 +64,25 @@ class HAListenerService : Service() {
             return
         }
         stopped = false
+        connectionGeneration += 1
+        val generation = connectionGeneration
         ws?.cancel()
         val req = Request.Builder().url(Network.wsUrl(config.haUrl)).build()
-        ws = Network.unsafeClient.newWebSocket(req, Listener(config))
+        ws = Network.unsafeClient.newWebSocket(req, Listener(config, generation))
     }
 
     private fun reconnectLater() {
         if (!stopped) handler.postDelayed({ connect() }, 5000)
     }
 
-    private inner class Listener(private val config: ConfigStore.Config) : WebSocketListener() {
-        private var subId = -1
+    private inner class Listener(
+        private val config: ConfigStore.Config,
+        private val generation: Int
+    ) : WebSocketListener() {
+        private val subscriptions = mutableMapOf<Int, String>()
 
         override fun onMessage(webSocket: WebSocket, text: String) {
+            if (!isCurrent()) return
             val json = JSONObject(text)
             when (json.optString("type")) {
                 "auth_required" -> {
@@ -84,42 +92,80 @@ class HAListenerService : Service() {
                         .toString())
                 }
                 "auth_ok" -> {
-                    msgId += 1
-                    subId = msgId
-                    webSocket.send(JSONObject()
-                        .put("id", subId)
-                        .put("type", "subscribe_events")
-                        .put("event_type", "ha_video_toast")
-                        .toString())
+                    subscribe(webSocket, EVENT_TV_TOAST)
+                    subscribe(webSocket, EVENT_VIDEO_TOAST)
                     updateNotification("Connected to Home Assistant")
                 }
                 "auth_invalid" -> updateNotification("Home Assistant auth failed")
                 "event" -> {
-                    if (json.optInt("id") != subId) return
+                    val eventType = subscriptions[json.optInt("id")] ?: return
                     val data = json.getJSONObject("event").optJSONObject("data") ?: return
-                    val camera = data.optString("camera", "")
-                    if (camera.isBlank()) return
-                    val duration = data.optInt("duration", config.duration)
-                    val fullscreen = data.optBoolean("fullscreen", false)
+                    val request = parseToast(eventType, data) ?: return
                     handler.post {
-                        if (Settings.canDrawOverlays(this@HAListenerService)) {
-                            overlay.show(camera, duration, fullscreen)
+                        if (isCurrent() && Settings.canDrawOverlays(this@HAListenerService)) {
+                            overlay.show(request)
                         }
                     }
                 }
             }
         }
 
+        private fun subscribe(webSocket: WebSocket, eventType: String) {
+            msgId += 1
+            subscriptions[msgId] = eventType
+            webSocket.send(JSONObject()
+                .put("id", msgId)
+                .put("type", "subscribe_events")
+                .put("event_type", eventType)
+                .toString())
+        }
+
+        private fun parseToast(eventType: String, data: JSONObject): ToastRequest? {
+            val duration = data.optInt("duration", config.duration)
+            val type = data.optString("type", "").lowercase()
+            val camera = data.optString("camera", "").trim()
+
+            if (eventType == EVENT_VIDEO_TOAST || type == "video" || camera.isNotBlank()) {
+                if (camera.isBlank()) return null
+                return ToastRequest.Video(
+                    camera = camera,
+                    duration = duration,
+                    fullscreen = data.optBoolean("fullscreen", false)
+                )
+            }
+
+            val title = data.optString("title", "").trim()
+            val message = data.optString("message", data.optString("text", "")).trim()
+            if (title.isBlank() && message.isBlank()) return null
+
+            return ToastRequest.Message(
+                title = title.ifBlank { "Notification" },
+                message = message,
+                duration = duration,
+                level = when (data.optString("level", "info").lowercase()) {
+                    "success", "ok" -> ToastRequest.Message.Level.SUCCESS
+                    "warning", "warn" -> ToastRequest.Message.Level.WARNING
+                    "error", "critical", "danger" -> ToastRequest.Message.Level.ERROR
+                    else -> ToastRequest.Message.Level.INFO
+                }
+            )
+        }
+
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (!isCurrent()) return
             updateNotification("Connection lost; retrying")
             ws = null
             reconnectLater()
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (!isCurrent()) return
             ws = null
             reconnectLater()
         }
+
+        private fun isCurrent(): Boolean =
+            !stopped && generation == connectionGeneration
     }
 
     private fun updateNotification(text: String) {

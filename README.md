@@ -32,8 +32,10 @@ Looking for the PC/computer version? Use the original Python desktop app: [githu
 
 - **Live MJPEG video** in Android TV overlay toasts
 - **Home Assistant WebSocket listener** using a long-lived access token
-- **Same event format** as the desktop HA Video Toast app: `ha_video_toast`
+- **Generic Home Assistant toast event**: `ha_tv_toast`
+- **Legacy compatibility** with the desktop HA Video Toast event: `ha_video_toast`
 - **Stacked toasts** over other Android TV apps when overlay permission is granted
+- **Compact text notifications** for events, reminders, and status messages
 - **Responsive toast sizing** based on the current TV resolution
 - **Optional fullscreen overlay** for important alerts
 - **Starts after boot** once configured
@@ -49,23 +51,23 @@ Looking for the PC/computer version? Use the original Python desktop app: [githu
 ```text
 Home Assistant automation
         |
-        v  event.fire  ha_video_toast  {camera: camera.doorbell}
+        v  event.fire  ha_tv_toast  {type: video, camera: camera.doorbell}
 HA WebSocket API  (ws://ha-url:8123/api/websocket)
         |
         v
-HAListenerService  --->  OverlayToastManager  --->  MjpegView
+HAListenerService  --->  OverlayToastManager  --->  MjpegView / text card
   foreground service      stacked overlay           HA camera proxy stream
-  boot receiver           fullscreen mode           /api/camera_proxy_stream/<entity>
+  boot receiver           fullscreen video          compact notifications
 ```
 
-The app connects to Home Assistant through the WebSocket API and subscribes to the custom event type `ha_video_toast`. When an automation fires that event, the app opens an Android overlay window and streams the camera feed through Home Assistant's built-in MJPEG camera proxy. No RTSP URL is required.
+The app connects to Home Assistant through the WebSocket API and subscribes to the custom event type `ha_tv_toast`, plus the legacy `ha_video_toast` camera event for compatibility. When an automation fires an event, the app opens an Android overlay window. Video toasts stream the camera feed through Home Assistant's built-in MJPEG camera proxy, while notification toasts show compact text cards. No RTSP URL is required.
 
 ---
 
 ## Requirements
 
 - Android TV / Google TV device running Android 8.0 or newer
-- Home Assistant with at least one camera entity
+- Home Assistant with at least one camera entity for video toasts
 - A Home Assistant long-lived access token
 - "Display over other apps" permission enabled for this app
 - Android SDK + JDK 17 if building from source
@@ -192,15 +194,33 @@ Paste the token into the TV app or the QR setup page.
 
 ### 2. Create an Automation
 
-Add this action to any automation:
+Use the generic `ha_tv_toast` event for new automations.
+
+Video toast:
 
 ```yaml
 action: event.fire
-event_type: ha_video_toast
+event_type: ha_tv_toast
 event_data:
+  type: video
   camera: camera.your_camera
   duration: 15
 ```
+
+Text notification:
+
+```yaml
+action: event.fire
+event_type: ha_tv_toast
+event_data:
+  type: notification
+  title: Dog detected
+  message: Backyard camera
+  duration: 8
+  level: info
+```
+
+Notification `level` controls the accent color. Supported values are `info`, `success`, `warning`, and `error`.
 
 Example - doorbell person detected:
 
@@ -212,8 +232,9 @@ trigger:
     to: "on"
 action:
   - action: event.fire
-    event_type: ha_video_toast
+    event_type: ha_tv_toast
     event_data:
+      type: video
       camera: camera.doorbell
       duration: 20
 ```
@@ -222,11 +243,22 @@ Optional fullscreen overlay:
 
 ```yaml
 action: event.fire
+event_type: ha_tv_toast
+event_data:
+  type: video
+  camera: camera.doorbell
+  duration: 15
+  fullscreen: true
+```
+
+Legacy desktop-compatible camera events still work:
+
+```yaml
+action: event.fire
 event_type: ha_video_toast
 event_data:
   camera: camera.doorbell
   duration: 15
-  fullscreen: true
 ```
 
 ---
@@ -243,6 +275,7 @@ The TV UI currently exposes:
 | Find HA | Scans the local subnet for Home Assistant on port `8123` |
 | Overlay Permission | Opens Android's "Display over other apps" permission screen |
 | Test Toast | Shows a sample overlay toast |
+| Test Notice | Shows a sample compact text notification |
 | Fullscreen Test | Shows a sample fullscreen overlay |
 
 Internal defaults:
